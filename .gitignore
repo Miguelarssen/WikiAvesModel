@@ -2,5 +2,21 @@ __pycache__/
 *.pyc
 dataset
 
-# Pesos de modelos � gerenciados pelo MLflow
+# ── Resultados de treino (pesos grandes, gerenciados pelo MLflow) ──────────────
 model/result/
+
+# ── Arquivos de pesos de modelos (grandes demais para o Git) ──────────────────
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.onnx
+*.h5
+*.safetensors
+
+# ── MLflow: artefatos locais (contém os .pth — métricas ficam no mlruns/) ─────
+# Descomente a linha abaixo se quiser ignorar TODO o mlruns (inclusive métricas)
+# mlruns/
+#
+# Para versionar só os metadados (sem os artefatos pesados), ignore apenas:
+mlruns/**/artifacts/

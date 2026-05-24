@@ -95,6 +95,9 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
 
     # ── MLflow: iniciar rastreamento do experimento ────────────────────────────
     setup_mlflow()
+    # Encerra qualquer run ativo (evita erro em re-execuções no Jupyter)
+    if mlflow.active_run() is not None:
+        mlflow.end_run()
     mlflow.start_run(run_name=model_name)
     mlflow.log_params({
         "lr":          lr,
