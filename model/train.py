@@ -212,22 +212,6 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
               "Loss Treino: " + format(train_loss, ".4f") + ", Acc Treino: " + format(train_acc, ".2f") + "% | "
               "Loss Val: " + format(val_loss, ".4f") + ", Acc Val: " + format(val_acc, ".2f") + "%")
 
-        # Checkpoint
-        if (epoch + 1) % 5 == 0:
-            checkpoint_path = os.path.join(save_dir, f"checkpoint_epoch_{epoch+1}.pth")
-
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'train_acc': train_acc,
-                'val_acc': val_acc,
-                'train_loss': train_loss,
-                'val_loss': val_loss
-            }, checkpoint_path)
-
-            print("--- Checkpoint salvo em: " + checkpoint_path)
-
         # Early stopping (Melhora se a Loss diminuir)
         if val_loss < best_val_loss - min_delta:
             best_val_loss = val_loss
