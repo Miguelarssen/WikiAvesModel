@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import torch
 import torch.nn as nn
@@ -6,11 +7,18 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import inspect
 import csv
+import mlflow
+import subprocess
+import mlflow.pytorch
 from datetime import datetime
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from torch.utils.data import DataLoader
 from dataset import avesDataset
 from utils.report import generate_report
+
+# Permite importar mlops/ estando dentro da pasta model/
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from mlops.mlflow_config import setup_mlflow
 
 def get_dataset():
 
@@ -85,6 +93,47 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
         
     os.makedirs(save_dir, exist_ok=True)
 
+    # ── MLflow: iniciar rastreamento do experimento ────────────────────────────
+    setup_mlflow()
+    mlflow.start_run(run_name=model_name)
+    mlflow.log_params({
+        "lr":          lr,
+        "num_epochs":  num_epochs,
+        "patience":    patience,
+        "num_classes": num_classes,
+        "batch_size":  train_loader.batch_size,
+        "model_name":  model_name,
+    })
+
+    # ── DVC + MLflow: rastrear versão do dataset ───────────────────────────────
+    # Lê o dataset.dvc commitado no Git e extrai o hash MD5 dos dados.
+    # Isso conecta cada run MLflow à versão exata do dataset que o gerou.
+    _repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    try:
+        dvc_file_content = subprocess.check_output(
+            ["git", "show", "HEAD:dataset.dvc"],
+            cwd=_repo_root, text=True, stderr=subprocess.DEVNULL
+        )
+        _dataset_hash = "unknown"
+        for _line in dvc_file_content.splitlines():
+            if "md5:" in _line and ".dir" in _line:
+                _dataset_hash = _line.strip().split(": ")[1]
+                break
+        mlflow.set_tag("dataset_dvc_hash", _dataset_hash)
+    except Exception:
+        mlflow.set_tag("dataset_dvc_hash", "unknown")
+
+    # Loga também o commit Git atual para rastreabilidade total do código
+    try:
+        _git_commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=_repo_root, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        mlflow.set_tag("git_commit", _git_commit)
+    except Exception:
+        mlflow.set_tag("git_commit", "unknown")
+
+
     # Tópico 3: Label Smoothing — força o modelo a manter incerteza,
     # melhorando calibração em classes acusticamente similares (ex: pariri × juriti).
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -150,6 +199,14 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
         val_losses.append(val_loss)
         train_accs.append(train_acc)
         val_accs.append(val_acc)
+
+        # ── MLflow: métricas por época ─────────────────────────────────────────
+        mlflow.log_metrics({
+            "train_loss": train_loss,
+            "val_loss":   val_loss,
+            "train_acc":  train_acc,
+            "val_acc":    val_acc,
+        }, step=epoch)
 
         print("Epoca [" + str(epoch+1) + "/" + str(num_epochs) + "] - "
               "Loss Treino: " + format(train_loss, ".4f") + ", Acc Treino: " + format(train_acc, ".2f") + "% | "
@@ -299,6 +356,20 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
             ])
         print("[OK] Dados salvos em " + csv_path)
 
+        # ── MLflow: métricas finais de teste e artefatos ───────────────────────
+        mlflow.log_metrics({
+            "test_acc":       acc,
+            "test_precision": precision,
+            "test_recall":    recall,
+            "test_f1":        f1,
+        })
+        mlflow.log_artifact(os.path.join(save_dir, "best_model.pth"))
+        report_file = os.path.join(save_dir, "report.pdf")
+        if os.path.exists(report_file):
+            mlflow.log_artifact(report_file)
+        mlflow.pytorch.log_model(model, artifact_path="model")
+
+    mlflow.end_run()
     return model, train_losses, val_losses, train_accs, val_accs
 
 def evaluate_model(model, loader, criterion, device, phase_name="Teste"):

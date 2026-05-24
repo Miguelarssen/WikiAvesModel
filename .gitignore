@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 dataset
+
+# Pesos de modelos — gerenciados pelo MLflow
+model/result/
