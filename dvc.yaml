@@ -1,0 +1,16 @@
+stages:
+  train:
+    cmd: python run.py
+    wdir: model
+    deps:
+      - run.py
+      - train.py
+      - dataset.py
+      - models/
+      - ../dataset
+    outs:
+      - result/:
+          persist: true
+    metrics:
+      - result/metrics.json:
+          cache: false

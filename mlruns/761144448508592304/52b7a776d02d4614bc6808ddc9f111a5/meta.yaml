@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/761144448508592304/52b7a776d02d4614bc6808ddc9f111a5/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '761144448508592304'
+lifecycle_stage: active
+run_id: 52b7a776d02d4614bc6808ddc9f111a5
+run_name: CNN_ConvNeXt_Tiny_TCN__ds-4ad1c1b
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1779912887110
+status: 1
+tags: []
+user_id: Miguel

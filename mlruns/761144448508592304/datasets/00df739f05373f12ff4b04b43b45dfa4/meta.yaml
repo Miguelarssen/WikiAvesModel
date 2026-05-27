@@ -1,0 +1,8 @@
+digest: dd045e03
+name: dataset_4ad1c1b
+profile: '{"num_rows": 10794, "num_elements": 21588}'
+schema: '{"mlflow_colspec": [{"type": "string", "name": "file_path", "required": true},
+  {"type": "long", "name": "class_index", "required": true}]}'
+source: '{"tags": {"mlflow.user": "Miguel", "mlflow.source.name": "run.ipynb", "mlflow.source.type":
+  "NOTEBOOK"}}'
+source_type: code

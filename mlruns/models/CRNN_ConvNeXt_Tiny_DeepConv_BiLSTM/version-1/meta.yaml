@@ -1,0 +1,16 @@
+creation_timestamp: 1779908769699
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1779908769699
+model_id: m-393880f6f32b462099a0e09420e6707e
+name: CRNN_ConvNeXt_Tiny_DeepConv_BiLSTM
+run_id: a7ffa636419d4f249fa2eac34cd20461
+run_link: null
+source: models:/m-393880f6f32b462099a0e09420e6707e
+status: READY
+status_message: null
+storage_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/761144448508592304/models/m-393880f6f32b462099a0e09420e6707e/artifacts
+user_id: null
+version: 1
+workspace: default

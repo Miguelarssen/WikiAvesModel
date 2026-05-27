@@ -7,6 +7,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import inspect
 import csv
+import json
 import mlflow
 import subprocess
 import mlflow.pytorch
@@ -18,7 +19,7 @@ from utils.report import generate_report
 
 # Permite importar mlops/ estando dentro da pasta model/
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from mlops.mlflow_config import setup_mlflow
+from mlops.mlflow_config import setup_mlflow, get_dataset_version
 
 def get_dataset():
 
@@ -98,7 +99,13 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
     # Encerra qualquer run ativo (evita erro em re-execuções no Jupyter)
     if mlflow.active_run() is not None:
         mlflow.end_run()
-    mlflow.start_run(run_name=model_name)
+
+    # ── DVC + MLflow: rastrear versão do dataset ───────────────────────────────
+    ds_version = get_dataset_version()
+    ds_hash_short = ds_version["hash_short"]
+    run_display_name = f"{model_name}__ds-{ds_hash_short}"
+
+    mlflow.start_run(run_name=run_display_name)
     mlflow.log_params({
         "lr":          lr,
         "num_epochs":  num_epochs,
@@ -108,25 +115,16 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
         "model_name":  model_name,
     })
 
-    # ── DVC + MLflow: rastrear versão do dataset ───────────────────────────────
-    # Lê o dataset.dvc commitado no Git e extrai o hash MD5 dos dados.
-    # Isso conecta cada run MLflow à versão exata do dataset que o gerou.
-    _repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-    try:
-        dvc_file_content = subprocess.check_output(
-            ["git", "show", "HEAD:dataset.dvc"],
-            cwd=_repo_root, text=True, stderr=subprocess.DEVNULL
-        )
-        _dataset_hash = "unknown"
-        for _line in dvc_file_content.splitlines():
-            if "md5:" in _line and ".dir" in _line:
-                _dataset_hash = _line.strip().split(": ")[1]
-                break
-        mlflow.set_tag("dataset_dvc_hash", _dataset_hash)
-    except Exception:
-        mlflow.set_tag("dataset_dvc_hash", "unknown")
+    # Tags estruturadas para filtragem: modelo × base
+    mlflow.set_tag("model_architecture", model_name)
+    mlflow.set_tag("dataset_version", ds_hash_short)
+    mlflow.set_tag("dataset_hash_full", ds_version["hash_full"])
+    mlflow.set_tag("dataset_git_commit", ds_version["git_commit"])
+    if ds_version["tag"]:
+        mlflow.set_tag("dataset_tag", ds_version["tag"])
 
-    # Loga também o commit Git atual para rastreabilidade total do código
+    # Commit Git atual do código
+    _repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     try:
         _git_commit = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -135,6 +133,26 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
         mlflow.set_tag("git_commit", _git_commit)
     except Exception:
         mlflow.set_tag("git_commit", "unknown")
+
+    # ── MLflow: Registrar Dataset nativamente na aba "Datasets" ───────────────
+    try:
+        import pandas as pd
+        import mlflow.data as mfdata
+        if real_ds and hasattr(real_ds, 'samples'):
+            # Montar um DataFrame com os arquivos que entraram no treino
+            ds_data = [{"file_path": str(f), "class_index": l} for f, l in real_ds.samples]
+            df_ds = pd.DataFrame(ds_data)
+            
+            # Definir nome bonito pro MLflow: usa a tag se existir, ou o hash
+            ds_name = ds_version["tag"] if ds_version["tag"] else f"dataset_{ds_hash_short}"
+            
+            mlflow_dataset = mfdata.from_pandas(df_ds, name=ds_name, targets="class_index")
+            mlflow.log_input(mlflow_dataset, context="training")
+            print(f"[INFO] Dataset '{ds_name}' registrado nativamente no MLflow com {len(df_ds)} amostras.")
+    except Exception as e:
+        print(f"[AVISO] Não foi possível registrar na aba Datasets do MLflow: {e}")
+
+
 
 
     # Tópico 3: Label Smoothing — força o modelo a manter incerteza,
@@ -356,7 +374,38 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
             mlflow.log_artifact(report_file)
         mlflow.pytorch.log_model(model, artifact_path="model")
 
+        # ── Salvar metrics.json para rastreamento pelo DVC ─────────────────────
+        metrics_json = {
+            "model_name":       model_name,
+            "dataset_version":  ds_hash_short,
+            "dataset_hash":     ds_version["hash_full"],
+            "epochs_trained":   len(train_losses),
+            "best_val_acc":     round(max(val_accs), 4),
+            "test_acc":         round(acc, 4),
+            "test_precision":   round(precision, 4),
+            "test_recall":      round(recall, 4),
+            "test_f1":          round(f1, 4),
+            "training_time":    training_time_str,
+            "timestamp":        datetime.now().isoformat(),
+        }
+        metrics_path = os.path.join(save_dir, "metrics.json")
+        with open(metrics_path, "w", encoding="utf-8") as mf:
+            json.dump(metrics_json, mf, indent=2, ensure_ascii=False)
+        mlflow.log_artifact(metrics_path)
+        print(f"[OK] Métricas salvas em {metrics_path}")
+
+    # ── MLflow: auto-registro no Model Registry ────────────────────────────────
+    run_id = mlflow.active_run().info.run_id
     mlflow.end_run()
+
+    try:
+        model_uri = f"runs:/{run_id}/model"
+        mv = mlflow.register_model(model_uri, model_name)
+        print(f"[REGISTRY] Modelo '{model_name}' registrado — versão {mv.version}")
+        print(f"[REGISTRY] Dataset usado: {ds_hash_short} ({ds_version['hash_full']})")
+    except Exception as e:
+        print(f"[REGISTRY][AVISO] Não foi possível registrar o modelo: {e}")
+
     return model, train_losses, val_losses, train_accs, val_accs
 
 def evaluate_model(model, loader, criterion, device, phase_name="Teste"):
