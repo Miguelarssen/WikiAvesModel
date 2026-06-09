@@ -21,12 +21,12 @@ from utils.report import generate_report
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from mlops.mlflow_config import setup_mlflow, get_dataset_version
 
-def get_dataset():
+def get_dataset(batch_size=32):
 
     data_dir = "../dataset"
 
     dataset = avesDataset(root_dir=data_dir)
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
 
 
@@ -261,7 +261,7 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
     # --- Geração de Relatório ---
     if test_loader:
         print("\n[STATS] Avaliando no conjunto de teste para o relatório final...")
-        model.load_state_dict(torch.load(os.path.join(save_dir, "best_model.pth")))
+        model.load_state_dict(torch.load(os.path.join(save_dir, "best_model.pth"), weights_only=True))
         model.eval()
         
         y_true = []
@@ -292,7 +292,12 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
             class_names = [name for name, _ in sorted(real_ds.label_map.items(), key=lambda x: x[1])]
         else:
             print("[AVISO] Nao foi possivel encontrar label_map no dataset. Usando nomes genéricos.")
-            num_classes = model.fc.out_features
+            # Tenta extrair num_classes de forma segura independente da arquitetura
+            try:
+                last_linear = [m for m in model.modules() if isinstance(m, nn.Linear)][-1]
+                num_classes = last_linear.out_features
+            except (IndexError, AttributeError):
+                num_classes = 27  # fallback para o dataset atual
             class_names = [format(i, "d") for i in range(num_classes)]
         
         history = {
@@ -395,16 +400,21 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
         print(f"[OK] Métricas salvas em {metrics_path}")
 
     # ── MLflow: auto-registro no Model Registry ────────────────────────────────
-    run_id = mlflow.active_run().info.run_id
+    # Captura o run_id ANTES de encerrar o run
+    active_run = mlflow.active_run()
+    run_id = active_run.info.run_id if active_run else None
     mlflow.end_run()
 
-    try:
-        model_uri = f"runs:/{run_id}/model"
-        mv = mlflow.register_model(model_uri, model_name)
-        print(f"[REGISTRY] Modelo '{model_name}' registrado — versão {mv.version}")
-        print(f"[REGISTRY] Dataset usado: {ds_hash_short} ({ds_version['hash_full']})")
-    except Exception as e:
-        print(f"[REGISTRY][AVISO] Não foi possível registrar o modelo: {e}")
+    if run_id:
+        try:
+            model_uri = f"runs:/{run_id}/model"
+            mv = mlflow.register_model(model_uri, model_name)
+            print(f"[REGISTRY] Modelo '{model_name}' registrado — versão {mv.version}")
+            print(f"[REGISTRY] Dataset usado: {ds_hash_short} ({ds_version['hash_full']})")
+        except Exception as e:
+            print(f"[REGISTRY][AVISO] Não foi possível registrar o modelo: {e}")
+    else:
+        print("[REGISTRY][AVISO] run_id não disponível — modelo não registrado.")
 
     return model, train_losses, val_losses, train_accs, val_accs
 

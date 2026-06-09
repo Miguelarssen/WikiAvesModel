@@ -10,7 +10,7 @@ run_link: null
 source: models:/m-393880f6f32b462099a0e09420e6707e
 status: READY
 status_message: null
-storage_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/761144448508592304/models/m-393880f6f32b462099a0e09420e6707e/artifacts
+storage_location: file:///d:/Estudos UTFPR/WikiAvesModel/mlruns/761144448508592304/models/m-393880f6f32b462099a0e09420e6707e/artifacts
 user_id: null
 version: 1
 workspace: default
