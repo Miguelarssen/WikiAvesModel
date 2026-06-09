@@ -1,5 +1,5 @@
 artifact_uri: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/761144448508592304/f67a4c228cf64eb4af7a53d0439bc047/artifacts
-end_time: null
+end_time: 1780962858653
 entry_point_name: ''
 experiment_id: '761144448508592304'
 lifecycle_stage: active
@@ -9,6 +9,6 @@ source_name: ''
 source_type: 4
 source_version: ''
 start_time: 1780958746881
-status: 1
+status: 3
 tags: []
 user_id: Miguel
