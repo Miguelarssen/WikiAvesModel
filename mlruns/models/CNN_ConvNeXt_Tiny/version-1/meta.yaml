@@ -1,0 +1,16 @@
+creation_timestamp: 1780974790681
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1780974790681
+model_id: m-794c2a27b9fb4991b04af1d7135a7e5a
+name: CNN_ConvNeXt_Tiny
+run_id: b2fd7f17a30743f6bdf9f456b62ebadc
+run_link: null
+source: models:/m-794c2a27b9fb4991b04af1d7135a7e5a
+status: READY
+status_message: null
+storage_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/models/m-794c2a27b9fb4991b04af1d7135a7e5a/artifacts
+user_id: null
+version: 1
+workspace: default

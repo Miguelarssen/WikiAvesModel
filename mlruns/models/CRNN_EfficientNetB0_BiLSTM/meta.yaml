@@ -1,8 +1,8 @@
 aliases: {}
-creation_timestamp: 1780965041566
+creation_timestamp: 1780980246003
 deployment_job_id: null
 deployment_job_state: null
 description: null
-last_updated_timestamp: 1780965041769
+last_updated_timestamp: 1780980246069
 name: CRNN_EfficientNetB0_BiLSTM
 workspace: default

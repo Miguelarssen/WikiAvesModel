@@ -45,6 +45,21 @@ def get_model_name(model):
     
     return name
 
+
+def _get_num_classes_from_fc(fc_layer):
+    """
+    BUG FIX: Extrai out_features do último nn.Linear dentro de fc_layer.
+    Suporta tanto nn.Linear direto quanto nn.Sequential (ConvNeXt, TCN, etc.).
+    """
+    if isinstance(fc_layer, nn.Linear):
+        return fc_layer.out_features
+    for child in reversed(list(fc_layer.children())):
+        result = _get_num_classes_from_fc(child)
+        if result is not None:
+            return result
+    return None
+
+
 def train_model(model, num_epochs, train_loader, val_loader, test_loader=None, 
                 lr=0.001, patience=5, min_delta=0.0):
 
@@ -106,305 +121,316 @@ def train_model(model, num_epochs, train_loader, val_loader, test_loader=None,
     run_display_name = f"{model_name}__ds-{ds_hash_short}"
 
     mlflow.start_run(run_name=run_display_name)
-    mlflow.log_params({
-        "lr":          lr,
-        "num_epochs":  num_epochs,
-        "patience":    patience,
-        "num_classes": num_classes,
-        "batch_size":  train_loader.batch_size,
-        "model_name":  model_name,
-    })
+    run_id = None
 
-    # Tags estruturadas para filtragem: modelo × base
-    mlflow.set_tag("model_architecture", model_name)
-    mlflow.set_tag("dataset_version", ds_hash_short)
-    mlflow.set_tag("dataset_hash_full", ds_version["hash_full"])
-    mlflow.set_tag("dataset_git_commit", ds_version["git_commit"])
-    if ds_version["tag"]:
-        mlflow.set_tag("dataset_tag", ds_version["tag"])
-
-    # Commit Git atual do código
-    _repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    # BUG FIX: try/finally garante que mlflow.end_run() é SEMPRE chamado,
+    # mesmo que ocorra qualquer exceção durante o treinamento ou avaliação.
     try:
-        _git_commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=_repo_root, text=True, stderr=subprocess.DEVNULL
-        ).strip()
-        mlflow.set_tag("git_commit", _git_commit)
-    except Exception:
-        mlflow.set_tag("git_commit", "unknown")
+        mlflow.log_params({
+            "lr":          lr,
+            "num_epochs":  num_epochs,
+            "patience":    patience,
+            "num_classes": num_classes,
+            "batch_size":  train_loader.batch_size,
+            "model_name":  model_name,
+        })
 
-    # ── MLflow: Registrar Dataset nativamente na aba "Datasets" ───────────────
-    try:
-        import pandas as pd
-        import mlflow.data as mfdata
-        if real_ds and hasattr(real_ds, 'samples'):
-            # Montar um DataFrame com os arquivos que entraram no treino
-            ds_data = [{"file_path": str(f), "class_index": l} for f, l in real_ds.samples]
-            df_ds = pd.DataFrame(ds_data)
-            
-            # Definir nome bonito pro MLflow: usa a tag se existir, ou o hash
-            ds_name = ds_version["tag"] if ds_version["tag"] else f"dataset_{ds_hash_short}"
-            
-            mlflow_dataset = mfdata.from_pandas(df_ds, name=ds_name, targets="class_index")
-            mlflow.log_input(mlflow_dataset, context="training")
-            print(f"[INFO] Dataset '{ds_name}' registrado nativamente no MLflow com {len(df_ds)} amostras.")
-    except Exception as e:
-        print(f"[AVISO] Não foi possível registrar na aba Datasets do MLflow: {e}")
+        # Tags estruturadas para filtragem: modelo × base
+        mlflow.set_tag("model_architecture", model_name)
+        mlflow.set_tag("dataset_version", ds_hash_short)
+        mlflow.set_tag("dataset_hash_full", ds_version["hash_full"])
+        mlflow.set_tag("dataset_git_commit", ds_version["git_commit"])
+        if ds_version["tag"]:
+            mlflow.set_tag("dataset_tag", ds_version["tag"])
 
+        # Commit Git atual do código
+        _repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        try:
+            _git_commit = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=_repo_root, text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            mlflow.set_tag("git_commit", _git_commit)
+        except Exception:
+            mlflow.set_tag("git_commit", "unknown")
 
+        # ── MLflow: Registrar Dataset nativamente na aba "Datasets" ───────────────
+        try:
+            import pandas as pd
+            import mlflow.data as mfdata
+            if real_ds and hasattr(real_ds, 'samples'):
+                # Montar um DataFrame com os arquivos que entraram no treino
+                ds_data = [{"file_path": str(f), "class_index": l} for f, l in real_ds.samples]
+                df_ds = pd.DataFrame(ds_data)
+                
+                # Definir nome bonito pro MLflow: usa a tag se existir, ou o hash
+                ds_name = ds_version["tag"] if ds_version["tag"] else f"dataset_{ds_hash_short}"
+                
+                mlflow_dataset = mfdata.from_pandas(df_ds, name=ds_name, targets="class_index")
+                mlflow.log_input(mlflow_dataset, context="training")
+                print(f"[INFO] Dataset '{ds_name}' registrado nativamente no MLflow com {len(df_ds)} amostras.")
+        except Exception as e:
+            print(f"[AVISO] Não foi possível registrar na aba Datasets do MLflow: {e}")
 
+        # Tópico 3: Label Smoothing — força o modelo a manter incerteza,
+        # melhorando calibração em classes acusticamente similares (ex: pariri × juriti).
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        optimizer = optim.Adam(model.parameters(), lr=lr)
 
-    # Tópico 3: Label Smoothing — força o modelo a manter incerteza,
-    # melhorando calibração em classes acusticamente similares (ex: pariri × juriti).
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+        # Histórico
+        train_losses, val_losses = [], []
+        train_accs, val_accs = [], []
 
-    # Histórico
-    train_losses, val_losses = [], []
-    train_accs, val_accs = [], []
+        # Early stopping (Monitorando VAL_LOSS)
+        best_val_loss = float('inf')
+        epochs_no_improve = 0
 
-    # Early stopping (Monitorando VAL_LOSS)
-    best_val_loss = float('inf')
-    epochs_no_improve = 0
+        start_time = time.time()
 
-    start_time = time.time()
+        # Loop de treino
+        for epoch in range(num_epochs):
+            model.train()
+            running_loss = 0.0
+            correct = 0
+            total = 0
 
-    # Loop de treino
-    for epoch in range(num_epochs):
-        model.train()
-        running_loss = 0.0
-        correct = 0
-        total = 0
-
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-
-        train_loss = running_loss / len(train_loader)
-        train_acc = 100. * correct / total
-
-        # Validação
-        model.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_total = 0
-
-        with torch.no_grad():
-            for inputs, labels in val_loader:
+            for inputs, labels in train_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
 
+                optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-                val_loss += loss.item()
+                running_loss += loss.item()
                 _, predicted = outputs.max(1)
-                val_total += labels.size(0)
-                val_correct += predicted.eq(labels).sum().item()
+                total += labels.size(0)
+                correct += predicted.eq(labels).sum().item()
 
-        val_loss /= len(val_loader)
-        val_acc = 100. * val_correct / val_total
+            train_loss = running_loss / len(train_loader)
+            train_acc = 100. * correct / total
 
-        # Salvar histórico
-        train_losses.append(train_loss)
-        val_losses.append(val_loss)
-        train_accs.append(train_acc)
-        val_accs.append(val_acc)
+            # Validação
+            model.eval()
+            val_loss = 0.0
+            val_correct = 0
+            val_total = 0
 
-        # ── MLflow: métricas por época ─────────────────────────────────────────
-        mlflow.log_metrics({
-            "train_loss": train_loss,
-            "val_loss":   val_loss,
-            "train_acc":  train_acc,
-            "val_acc":    val_acc,
-        }, step=epoch)
+            with torch.no_grad():
+                for inputs, labels in val_loader:
+                    inputs, labels = inputs.to(device), labels.to(device)
 
-        print("Epoca [" + str(epoch+1) + "/" + str(num_epochs) + "] - "
-              "Loss Treino: " + format(train_loss, ".4f") + ", Acc Treino: " + format(train_acc, ".2f") + "% | "
-              "Loss Val: " + format(val_loss, ".4f") + ", Acc Val: " + format(val_acc, ".2f") + "%")
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
 
-        # Early stopping (Melhora se a Loss diminuir)
-        if val_loss < best_val_loss - min_delta:
-            best_val_loss = val_loss
-            epochs_no_improve = 0
+                    val_loss += loss.item()
+                    _, predicted = outputs.max(1)
+                    val_total += labels.size(0)
+                    val_correct += predicted.eq(labels).sum().item()
 
-            best_path = os.path.join(save_dir, "best_model.pth")
-            torch.save(model.state_dict(), best_path)
+            val_loss /= len(val_loader)
+            val_acc = 100. * val_correct / val_total
 
-            print("[OK] Melhor modelo atualizado!")
-        else:
-            epochs_no_improve += 1
-            print("[WAIT] Sem melhora por " + str(epochs_no_improve) + " épocas")
+            # Salvar histórico
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            train_accs.append(train_acc)
+            val_accs.append(val_acc)
+
+            # ── MLflow: métricas por época ─────────────────────────────────────────
+            mlflow.log_metrics({
+                "train_loss": train_loss,
+                "val_loss":   val_loss,
+                "train_acc":  train_acc,
+                "val_acc":    val_acc,
+            }, step=epoch)
+
+            print("Epoca [" + str(epoch+1) + "/" + str(num_epochs) + "] - "
+                  "Loss Treino: " + format(train_loss, ".4f") + ", Acc Treino: " + format(train_acc, ".2f") + "% | "
+                  "Loss Val: " + format(val_loss, ".4f") + ", Acc Val: " + format(val_acc, ".2f") + "%")
+
+            # Early stopping (Melhora se a Loss diminuir)
+            if val_loss < best_val_loss - min_delta:
+                best_val_loss = val_loss
+                epochs_no_improve = 0
+
+                best_path = os.path.join(save_dir, "best_model.pth")
+                torch.save(model.state_dict(), best_path)
+
+                print("[OK] Melhor modelo atualizado!")
+            else:
+                epochs_no_improve += 1
+                print("[WAIT] Sem melhora por " + str(epochs_no_improve) + " épocas")
 
 
-        if epochs_no_improve >= patience:
-            print("[STOP] Early stopping ativado!")
-            break
-
-    end_time = time.time()
-    duration = end_time - start_time
-    hours, rem = divmod(duration, 3600)
-    minutes, seconds = divmod(rem, 60)
-    training_time_str = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
-    print(f"[INFO] Treinamento concluído em {training_time_str}")
-
-    # --- Geração de Relatório ---
-    if test_loader:
-        print("\n[STATS] Avaliando no conjunto de teste para o relatório final...")
-        model.load_state_dict(torch.load(os.path.join(save_dir, "best_model.pth"), weights_only=True))
-        model.eval()
-        
-        y_true = []
-        y_pred = []
-        
-        with torch.no_grad():
-            for inputs, labels in test_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                _, predicted = outputs.max(1)
-                
-                y_true.extend(labels.cpu().numpy())
-                y_pred.extend(predicted.cpu().numpy())
-        
-        # Obter nomes das classes
-        curr_ds = train_loader.dataset
-        real_ds = None
-        
-        # Procura recursivamente pelo dataset original que contém o label_map
-        temp_ds = curr_ds
-        while temp_ds is not None:
-            if hasattr(temp_ds, 'label_map'):
-                real_ds = temp_ds
+            if epochs_no_improve >= patience:
+                print("[STOP] Early stopping ativado!")
                 break
-            temp_ds = getattr(temp_ds, 'dataset', None)
-        
-        if real_ds:
-            class_names = [name for name, _ in sorted(real_ds.label_map.items(), key=lambda x: x[1])]
-        else:
-            print("[AVISO] Nao foi possivel encontrar label_map no dataset. Usando nomes genéricos.")
-            # Tenta extrair num_classes de forma segura independente da arquitetura
-            try:
-                last_linear = [m for m in model.modules() if isinstance(m, nn.Linear)][-1]
-                num_classes = last_linear.out_features
-            except (IndexError, AttributeError):
-                num_classes = 27  # fallback para o dataset atual
-            class_names = [format(i, "d") for i in range(num_classes)]
-        
-        history = {
-            'train_loss': train_losses,
-            'val_loss': val_losses,
-            'train_acc': train_accs,
-            'val_acc': val_accs
-        }
-        
-        generate_report(
-            save_dir=save_dir,
-            history=history,
-            y_true=y_true,
-            y_pred=y_pred,
-            class_names=class_names,
-            training_time=training_time_str
-        )
 
-        print("[STATS] Salvando dados no historico geral CSV...")
-        csv_path = os.path.join("result", "historico_geral_treinos.csv")
-        headers = ['Data/Hora', 'Modelo', 'Total Epocas', 'Melhor Acc Val', 'Acc Teste', 'Precisao Teste', 'Recall Teste', 'F1 Teste', 'Classes', 'Tempo de Execução']
-        
-        # Verifica se o arquivo existe e se precisa de atualização de colunas
-        if os.path.exists(csv_path):
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                existing_headers = next(reader, None)
+        end_time = time.time()
+        duration = end_time - start_time
+        hours, rem = divmod(duration, 3600)
+        minutes, seconds = divmod(rem, 60)
+        training_time_str = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+        print(f"[INFO] Treinamento concluído em {training_time_str}")
+
+        # --- Geração de Relatório ---
+        if test_loader:
+            print("\n[STATS] Avaliando no conjunto de teste para o relatório final...")
+            model.load_state_dict(torch.load(os.path.join(save_dir, "best_model.pth"), weights_only=True))
+            model.eval()
             
-            if existing_headers and 'Tempo de Execução' not in existing_headers:
-                print("[INFO] Atualizando estrutura do CSV para incluir novas colunas...")
-                rows = []
+            y_true = []
+            y_pred = []
+            
+            with torch.no_grad():
+                for inputs, labels in test_loader:
+                    inputs, labels = inputs.to(device), labels.to(device)
+                    outputs = model(inputs)
+                    _, predicted = outputs.max(1)
+                    
+                    y_true.extend(labels.cpu().numpy())
+                    y_pred.extend(predicted.cpu().numpy())
+            
+            # Obter nomes das classes
+            curr_ds = train_loader.dataset
+            real_ds_test = None
+            
+            # BUG FIX: Procura recursivamente pelo dataset original que contém o label_map.
+            # Percorre tanto .subset (TransformedSubset) quanto .dataset (Subset).
+            temp_ds = curr_ds
+            while temp_ds is not None:
+                if hasattr(temp_ds, 'label_map'):
+                    real_ds_test = temp_ds
+                    break
+                next_ds = getattr(temp_ds, 'subset', None)
+                if next_ds is None:
+                    next_ds = getattr(temp_ds, 'dataset', None)
+                temp_ds = next_ds
+            
+            if real_ds_test:
+                class_names = [name for name, _ in sorted(real_ds_test.label_map.items(), key=lambda x: x[1])]
+            else:
+                print("[AVISO] Nao foi possivel encontrar label_map no dataset. Usando nomes genéricos.")
+                # BUG FIX: usa função robusta que suporta fc como Linear ou Sequential
+                num_classes = _get_num_classes_from_fc(model.fc) or num_classes
+                class_names = [format(i, "d") for i in range(num_classes)]
+            
+            history = {
+                'train_loss': train_losses,
+                'val_loss': val_losses,
+                'train_acc': train_accs,
+                'val_acc': val_accs
+            }
+            
+            generate_report(
+                save_dir=save_dir,
+                history=history,
+                y_true=y_true,
+                y_pred=y_pred,
+                class_names=class_names,
+                training_time=training_time_str
+            )
+
+            print("[STATS] Salvando dados no historico geral CSV...")
+            csv_path = os.path.join("result", "historico_geral_treinos.csv")
+            headers = ['Data/Hora', 'Modelo', 'Total Epocas', 'Melhor Acc Val', 'Acc Teste', 'Precisao Teste', 'Recall Teste', 'F1 Teste', 'Classes', 'Tempo de Execução']
+            
+            # Verifica se o arquivo existe e se precisa de atualização de colunas
+            if os.path.exists(csv_path):
                 with open(csv_path, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        for h in headers:
-                            if h not in row: row[h] = "" # Preenche campos antigos como nulos
-                        rows.append(row)
+                    reader = csv.reader(f)
+                    existing_headers = next(reader, None)
                 
-                with open(csv_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.DictWriter(f, fieldnames=headers)
-                    writer.writeheader()
-                    writer.writerows(rows)
+                if existing_headers and 'Tempo de Execução' not in existing_headers:
+                    print("[INFO] Atualizando estrutura do CSV para incluir novas colunas...")
+                    rows = []
+                    with open(csv_path, 'r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            for h in headers:
+                                if h not in row: row[h] = "" # Preenche campos antigos como nulos
+                            rows.append(row)
+                    
+                    with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=headers)
+                        writer.writeheader()
+                        writer.writerows(rows)
 
-        file_exists = os.path.exists(csv_path)
-        acc = accuracy_score(y_true, y_pred)
-        precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
-        recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
-        f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
-        
-        with open(csv_path, mode='a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(headers)
+            file_exists = os.path.exists(csv_path)
+            acc = accuracy_score(y_true, y_pred)
+            precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+            recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+            f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
             
-            writer.writerow([
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                model_name,
-                len(train_losses),
-                f"{max(val_accs):.2f}",
-                f"{acc:.4f}",
-                f"{precision:.4f}",
-                f"{recall:.4f}",
-                f"{f1:.4f}",
-                len(class_names),
-                training_time_str
-            ])
-        print("[OK] Dados salvos em " + csv_path)
+            with open(csv_path, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(headers)
+                
+                writer.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    model_name,
+                    len(train_losses),
+                    f"{max(val_accs):.2f}",
+                    f"{acc:.4f}",
+                    f"{precision:.4f}",
+                    f"{recall:.4f}",
+                    f"{f1:.4f}",
+                    len(class_names),
+                    training_time_str
+                ])
+            print("[OK] Dados salvos em " + csv_path)
 
-        # ── MLflow: métricas finais de teste e artefatos ───────────────────────
-        mlflow.log_metrics({
-            "test_acc":       acc,
-            "test_precision": precision,
-            "test_recall":    recall,
-            "test_f1":        f1,
-        })
-        mlflow.log_artifact(os.path.join(save_dir, "best_model.pth"))
-        report_file = os.path.join(save_dir, "report.pdf")
-        if os.path.exists(report_file):
-            mlflow.log_artifact(report_file)
-        mlflow.pytorch.log_model(model, artifact_path="model")
+            # ── MLflow: métricas finais de teste e artefatos ───────────────────────
+            mlflow.log_metrics({
+                "test_acc":       acc,
+                "test_precision": precision,
+                "test_recall":    recall,
+                "test_f1":        f1,
+            })
+            mlflow.log_artifact(os.path.join(save_dir, "best_model.pth"))
+            report_file = os.path.join(save_dir, "report.pdf")
+            if os.path.exists(report_file):
+                mlflow.log_artifact(report_file)
+            
+            # Logar a matriz de confusão como artefato
+            cm_plot_path = os.path.join(save_dir, "report_cm.png")
+            if os.path.exists(cm_plot_path):
+                mlflow.log_artifact(cm_plot_path)
+                
+            mlflow.pytorch.log_model(model, artifact_path="model")
 
-        # ── Salvar metrics.json para rastreamento pelo DVC ─────────────────────
-        metrics_json = {
-            "model_name":       model_name,
-            "dataset_version":  ds_hash_short,
-            "dataset_hash":     ds_version["hash_full"],
-            "epochs_trained":   len(train_losses),
-            "best_val_acc":     round(max(val_accs), 4),
-            "test_acc":         round(acc, 4),
-            "test_precision":   round(precision, 4),
-            "test_recall":      round(recall, 4),
-            "test_f1":          round(f1, 4),
-            "training_time":    training_time_str,
-            "timestamp":        datetime.now().isoformat(),
-        }
-        metrics_path = os.path.join(save_dir, "metrics.json")
-        with open(metrics_path, "w", encoding="utf-8") as mf:
-            json.dump(metrics_json, mf, indent=2, ensure_ascii=False)
-        mlflow.log_artifact(metrics_path)
-        print(f"[OK] Métricas salvas em {metrics_path}")
+            # ── Salvar metrics.json para rastreamento pelo DVC ─────────────────────
+            metrics_json = {
+                "model_name":       model_name,
+                "dataset_version":  ds_hash_short,
+                "dataset_hash":     ds_version["hash_full"],
+                "epochs_trained":   len(train_losses),
+                "best_val_acc":     round(max(val_accs), 4),
+                "test_acc":         round(acc, 4),
+                "test_precision":   round(precision, 4),
+                "test_recall":      round(recall, 4),
+                "test_f1":          round(f1, 4),
+                "training_time":    training_time_str,
+                "timestamp":        datetime.now().isoformat(),
+            }
+            metrics_path = os.path.join(save_dir, "metrics.json")
+            with open(metrics_path, "w", encoding="utf-8") as mf:
+                json.dump(metrics_json, mf, indent=2, ensure_ascii=False)
+            mlflow.log_artifact(metrics_path)
+            print(f"[OK] Métricas salvas em {metrics_path}")
+
+        # Captura o run_id ANTES de encerrar o run
+        run_id = mlflow.active_run().info.run_id
+
+    finally:
+        # BUG FIX: sempre finaliza o run MLflow, mesmo se houve exceção acima
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
 
     # ── MLflow: auto-registro no Model Registry ────────────────────────────────
-    # Captura o run_id ANTES de encerrar o run
-    active_run = mlflow.active_run()
-    run_id = active_run.info.run_id if active_run else None
-    mlflow.end_run()
-
     if run_id:
         try:
             model_uri = f"runs:/{run_id}/model"

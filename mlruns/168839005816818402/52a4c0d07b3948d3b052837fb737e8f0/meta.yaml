@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/52a4c0d07b3948d3b052837fb737e8f0/artifacts
+end_time: 1780979050628
+entry_point_name: ''
+experiment_id: '168839005816818402'
+lifecycle_stage: active
+run_id: 52a4c0d07b3948d3b052837fb737e8f0
+run_name: CRNN_ResNet18_BiLSTM__ds-4ad1c1b
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1780978222730
+status: 3
+tags: []
+user_id: Miguel

@@ -1,8 +1,8 @@
 aliases: {}
-creation_timestamp: 1779908769594
+creation_timestamp: 1780986354598
 deployment_job_id: null
 deployment_job_state: null
 description: null
-last_updated_timestamp: 1779908769699
+last_updated_timestamp: 1780986354671
 name: CRNN_ConvNeXt_Tiny_DeepConv_BiLSTM
 workspace: default

@@ -1,0 +1,8 @@
+artifact_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402
+creation_time: 1780968417097
+experiment_id: '168839005816818402'
+last_update_time: 1780968417097
+lifecycle_stage: active
+name: WikiAves-BioacousticClassifier
+trace_location: null
+workspace: default

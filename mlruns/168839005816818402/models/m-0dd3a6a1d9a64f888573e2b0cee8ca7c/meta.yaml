@@ -1,0 +1,10 @@
+artifact_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/models/m-0dd3a6a1d9a64f888573e2b0cee8ca7c/artifacts
+creation_timestamp: 1780971939637
+experiment_id: '168839005816818402'
+last_updated_timestamp: 1780971948478
+model_id: m-0dd3a6a1d9a64f888573e2b0cee8ca7c
+model_type: null
+name: model
+source_run_id: 0d6563762dc84524b4093fa1ce2cd87b
+status: 2
+status_message: null

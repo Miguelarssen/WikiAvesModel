@@ -175,7 +175,8 @@ def generate_report(save_dir, history, y_true, y_pred, class_names, training_tim
     # Limpar imagens temporarias
     try:
         if os.path.exists(history_plot_path): os.remove(history_plot_path)
-        if os.path.exists(cm_plot_path): os.remove(cm_plot_path)
+        # O usuario solicitou manter a matriz de confusao salva na pasta
+        # if os.path.exists(cm_plot_path): os.remove(cm_plot_path)
     except:
         pass
 

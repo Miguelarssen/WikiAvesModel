@@ -1,0 +1,16 @@
+creation_timestamp: 1780982807243
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1780982807243
+model_id: m-a0cf7c2e440a4b04b512f1c7360552e6
+name: CRNN_ConvNeXt_Tiny_BiLSTM
+run_id: 2aa861cece314ce79945c4e4e0d5bc64
+run_link: null
+source: models:/m-a0cf7c2e440a4b04b512f1c7360552e6
+status: READY
+status_message: null
+storage_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/models/m-a0cf7c2e440a4b04b512f1c7360552e6/artifacts
+user_id: null
+version: 1
+workspace: default

@@ -1,0 +1,16 @@
+creation_timestamp: 1780971948553
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1780971948553
+model_id: m-0dd3a6a1d9a64f888573e2b0cee8ca7c
+name: CNN_EfficientNetB0
+run_id: 0d6563762dc84524b4093fa1ce2cd87b
+run_link: null
+source: models:/m-0dd3a6a1d9a64f888573e2b0cee8ca7c
+status: READY
+status_message: null
+storage_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/models/m-0dd3a6a1d9a64f888573e2b0cee8ca7c/artifacts
+user_id: null
+version: 1
+workspace: default

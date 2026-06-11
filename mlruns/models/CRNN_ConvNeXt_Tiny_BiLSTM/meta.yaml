@@ -1,0 +1,8 @@
+aliases: {}
+creation_timestamp: 1780982807177
+deployment_job_id: null
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1780982807243
+name: CRNN_ConvNeXt_Tiny_BiLSTM
+workspace: default

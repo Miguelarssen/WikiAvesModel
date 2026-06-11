@@ -1,16 +1,16 @@
-creation_timestamp: 1780965041769
+creation_timestamp: 1780980246069
 current_stage: None
 deployment_job_state: null
 description: null
-last_updated_timestamp: 1780965041769
-model_id: m-7c284944cba644b1b9c1e3af86fd16ee
+last_updated_timestamp: 1780980246069
+model_id: m-a0dc53a7633740d996ddc6cfa19f169a
 name: CRNN_EfficientNetB0_BiLSTM
-run_id: 4b3bd929ed91478c9fbeac3b2b72ad16
+run_id: c2bd55ab92794a669a201720697ec8db
 run_link: null
-source: models:/m-7c284944cba644b1b9c1e3af86fd16ee
+source: models:/m-a0dc53a7633740d996ddc6cfa19f169a
 status: READY
 status_message: null
-storage_location: file:///d:/Estudos UTFPR/WikiAvesModel/mlruns/761144448508592304/models/m-7c284944cba644b1b9c1e3af86fd16ee/artifacts
+storage_location: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/models/m-a0dc53a7633740d996ddc6cfa19f169a/artifacts
 user_id: null
 version: 1
 workspace: default

@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Miguel/Desktop/EstudosUTFPR/WikiAvesModel/mlruns/168839005816818402/b7b38846c6b541898436354538b545d5/artifacts
+end_time: 1780986354594
+entry_point_name: ''
+experiment_id: '168839005816818402'
+lifecycle_stage: active
+run_id: b7b38846c6b541898436354538b545d5
+run_name: CRNN_ConvNeXt_Tiny_DeepConv_BiLSTM__ds-4ad1c1b
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1780982807916
+status: 3
+tags: []
+user_id: Miguel
