@@ -12,10 +12,9 @@ _DVC_FILE = os.path.join(_PROJECT_ROOT, "dataset.dvc")
 
 def setup_mlflow():
     """Configura o tracking URI e o experimento MLflow."""
-    # Usa o diretório mlruns/ na raiz do projeto.
-    # Sem .lower() para evitar inconsistência de path no Windows.
-    _mlruns_path = os.path.join(_PROJECT_ROOT, "mlruns").replace("\\", "/")
-    mlflow.set_tracking_uri(f"file:///{_mlruns_path}")
+    # Usa o banco SQLite na raiz do projeto.
+    _db_path = os.path.join(_PROJECT_ROOT, "mlflow.db").replace("\\", "/")
+    mlflow.set_tracking_uri(f"sqlite:///{_db_path}")
     mlflow.set_experiment(EXPERIMENT_NAME)
 
 

@@ -20,3 +20,5 @@ model/result/
 #
 # Para versionar só os metadados (sem os artefatos pesados), ignore apenas:
 mlruns/**/artifacts/
+mlflow.db
+mlruns_backup/
